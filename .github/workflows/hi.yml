@@ -1,0 +1,74 @@
+name: Building Twrp
+
+on:
+  workflow_dispatch:
+
+env:
+  # (required) twrp manifest 
+  MANIFEST: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni.git
+  # (required) manifest branch 
+  BRANCH: twrp-9.0
+  # (required) device codename i.e: sweet mojito.. 
+  DEVICE: m10lte
+  # (required) device tree link with branch if exists
+  DT_LINK: https://github.com/n7105/android_device_samsung_m10lte
+  # (required) who made your phone ? 
+  MANUFACTURER: samsung
+  # (required) recovery partiton = recovery, else (no recovery partition): boot 
+  TARGET: recovery
+  # dont change that
+  IMAGE: image
+  # (required) depend of device tree if you see twrp_"codename".mk use twrp
+  # else (omni_"codename".mk): omni
+  OT: omni
+  # dont change that
+  SYM: _
+  # (required) output format for some reason samsung phones need a custom mkbootimg
+  # which compress your recovery into .tar (default: .img / samsung + custom mkbootimg: .tar) 
+  FORMAT: .img
+
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+
+    steps:
+       - name: Checkout
+         uses: actions/checkout@master
+                               
+       - name: remove pkg and setting repo
+         run: 
+            sudo apt update && sudo apt install wget -y
+            wget https://raw.githubusercontent.com/SA-17/rm_pkg/main/setup.sh && bash setup.sh          
+            cd .. && sudo -E apt-get -qq update
+            sudo -E apt-get -qq install bc build-essential ccache tar zip curl libstdc++6 git wget python gcc clang libssl-dev repo rsync flex curl  bison aria2
+            sudo curl --create-dirs -L -o /usr/local/bin/repo -O -L https://storage.googleapis.com/git-repo-downloads/repo
+            sudo chmod a+rx /usr/local/bin/repo
+            
+       - name: Adding and Sync source
+         run: |   
+             mkdir work
+             cd work
+             repo init -u $MANIFEST -b $BRANCH --depth=1              
+             repo sync -c -j700 --force-sync --no-clone-bundle --no-tags
+             git clone $DT_LINK --depth=1 --single-branch device/$MANUFACTURER/$DEVICE
+             git clone https://github.com/samsungexynos7870/android_kernel_samsung_exynos7870 -b twrp kernel/samsung/m10lte
+             git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 /opt/gcc
+             git clone https://github.com/n7105/android_kernel_samsung_m10lte something
+             mv something/exynos7870-m10lte_defconfig kernel/samsung/m10lte/arch/arm64/configs
+             mv something/*m10lte* kernel/samsung/m10lte/arch/arm64/boot/dts
+             rm -rf something
+             gcc=/opt/gcc/bin/aarch64-linux-android-
+             sed -i '4s/.*/export CROSS_COMPILE= $gcc/' kernel/samsung/m10lte/build_kernel.sh
+             
+       - name: Build twrp
+         run: |
+              cd work
+              . build/envsetup.sh && lunch $OT$SYM$DEVICE-eng && export ALLOW_MISSING_DEPENDENCIES=true && mka $TARGET$IMAGE -j15
+              zip twrp.zip /home/runner/work/ssh/ssh/work/out/target/product/$DEVICE/$TARGET$FORMAT
+
+       - name: Save in artifact
+         uses: actions/upload-artifact@v3
+         with:
+            name: recovery.zip
+            path: /home/runner/work/ssh/ssh/work/twrp.zip
+            retention-days: 5
