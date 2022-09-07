@@ -35,7 +35,7 @@ jobs:
         git config --global credential.helper store
         echo "https://${GitHubName}:${{ secrets.GH_TOKEN }}@github.com" > ~/.git-credentials
     - name: sync repo
-      run |
+      run: |
         repo init -u https://github.com/CarbonROM/android.git -b cr-5.0 && repo sync -f
     - name: build vendor
         git clone https://github.com/n7105/android_vendor_samsung_m10lte vendor/samsung/m10lte
